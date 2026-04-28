@@ -222,30 +222,30 @@ class AdminProfilePage extends StatelessWidget {
             const SizedBox(height: 16),
 
             // ── Тусламж хэсэг ────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                children: [
-                  _actionTile(
-                    icon: Icons.palette_outlined,
-                    label: 'Dark mode',
-                    onTap: () {},
-                  ),
-                  _divider(),
-                  _actionTile(
-                    icon: Icons.help_outline,
-                    label: 'Тусламж',
-                    onTap: () {},
-                  ),
-                ],
-              ),
-            ),
+            // Container(
+            //   decoration: BoxDecoration(
+            //     color: const Color(0xFF1A1A2E),
+            //     borderRadius: BorderRadius.circular(16),
+            //     border: Border.all(color: Colors.white12),
+            //   ),
+            //   child: Column(
+            //     children: [
+            //       _actionTile(
+            //         icon: Icons.palette_outlined,
+            //         label: 'Dark mode',
+            //         onTap: () {},
+            //       ),
+            //       _divider(),
+            //       _actionTile(
+            //         icon: Icons.help_outline,
+            //         label: 'Тусламж',
+            //         onTap: () {},
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
-            const SizedBox(height: 24),
+            // const SizedBox(height: 24),
 
             // ── Гарах товч ───────────────────────────
             SizedBox(

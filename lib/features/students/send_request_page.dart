@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/auth_controller.dart';
 
-// ─── Color palette ───────────────────────────────────────────────────────────
 const _bg = Color(0xFF0A1628);
 const _surface = Color(0xFF111D35);
 const _card = Color(0xFF162040);
@@ -18,13 +17,11 @@ const _textPrimary = Colors.white;
 const _textSecondary = Color(0xFF8896B3);
 const _textMuted = Color(0xFF4A5878);
 
-// ─── Category model ───────────────────────────────────────────────────────────
 class _Category {
   final String label;
   final String sublabel;
   final IconData icon;
   final Color color;
-
   const _Category({
     required this.label,
     required this.sublabel,
@@ -60,7 +57,6 @@ const _categories = [
   ),
 ];
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 class SendRequestPage extends StatefulWidget {
   const SendRequestPage({super.key});
 
@@ -139,54 +135,79 @@ class _SendRequestPageState extends State<SendRequestPage>
     }
   }
 
-  // ── Оюутаны мэдээлэл авах ────────────────────────────────────────────────
+  // ── Оюутны мэдээлэл авах ─────────────────────────────────────────────────
   // Students хүснэгт:
-  //   school    → салбар сургууль
-  //   faculty   → тэнхим  (admins.faculty-тай таарна)
-  //   department → мэргэжил (ашиглахгүй)
+  //   school     → салбар сургууль  (admins.school-тай таарна)
+  //   department → тэнхим           (admins.department-тай таарна)
+  //   faculty    → мэргэжил         (ашиглахгүй)
   Future<Map<String, dynamic>> _getStudentInfo() async {
     final userId = context.read<AuthController>().currentUser?['id'];
-
     final data = await _client
         .from('Students')
-        .select('id, school, faculty')
+        .select('id, school, department')
         .eq('user_id', userId)
         .maybeSingle();
 
+    // .trim() — trailing space-ийн улмаас match болохгүй байх асуудлаас сэргийлнэ
     return {
       'student_id': data?['id'],
-      'school': data?['school']?.toString() ?? '',
-      'faculty': data?['faculty']?.toString() ?? '',
+      'school': data?['school']?.toString().trim() ?? '',
+      'department': data?['department']?.toString().trim() ?? '',
     };
   }
 
-  // ── Admin ID жагсаалт тодорхойлох ────────────────────────────────────────
+  // ── Admin шийдвэрлэх логик ────────────────────────────────────────────────
+  //
+  // АКАДЕМИК:
+  //   1. Оюутны school + department-тай тохирох Тэнхимийн эрхлэгч
+  //   2. Олдохгүй → ижил school-ийн аль нэг Тэнхимийн эрхлэгч
+  //   3. Олдохгүй → ижил school-ийн Сургалтын алба
+  //   4. Олдохгүй → аль ч Сургалтын алба (last resort)
+  //
+  // ЗАХИРГААНЫ / ОРЧНЫ / БУСАД:
+  //   → Оюутны school-ийн Сургалтын алба
+  //   → Олдохгүй → аль ч Сургалтын алба
+  //   → БУСАД + нэмэлт admin сонгосон бол тэрийг ч нэмнэ
+  //
   Future<List<int>> _resolveAdminIds(
     String studentSchool,
-    String studentFaculty,
+    String studentDepartment,
   ) async {
     final List<int> adminIds = [];
 
     if (_selectedCategory!.label == 'Академик') {
-      // Оюутаны school + faculty-ийн тэнхимийн эрхлэгч хайна
-      if (studentSchool.isNotEmpty && studentFaculty.isNotEmpty) {
-        final byFaculty = await _client
+      // 1. Яг таарах Тэнхимийн эрхлэгч (school + department)
+      if (studentSchool.isNotEmpty && studentDepartment.isNotEmpty) {
+        final exact = await _client
             .from('admins')
             .select('id')
             .eq('position', 'Тэнхимийн эрхлэгч')
             .eq('school', studentSchool)
-            .eq('faculty', studentFaculty)
+            .eq('department', studentDepartment)
             .eq('status', 'active')
             .not('user_id', 'is', null)
             .limit(1)
             .maybeSingle();
-
-        if (byFaculty != null) adminIds.add(byFaculty['id'] as int);
+        if (exact != null) adminIds.add(exact['id'] as int);
       }
 
-      // Олдохгүй бол ижил school-ийн Сургалтын алба fallback
+      // 2. Ижил school-ийн аль нэг Тэнхимийн эрхлэгч
       if (adminIds.isEmpty && studentSchool.isNotEmpty) {
-        final fallback = await _client
+        final bySchool = await _client
+            .from('admins')
+            .select('id')
+            .eq('position', 'Тэнхимийн эрхлэгч')
+            .eq('school', studentSchool)
+            .eq('status', 'active')
+            .not('user_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+        if (bySchool != null) adminIds.add(bySchool['id'] as int);
+      }
+
+      // 3. Ижил school-ийн Сургалтын алба (fallback)
+      if (adminIds.isEmpty && studentSchool.isNotEmpty) {
+        final alba = await _client
             .from('admins')
             .select('id')
             .eq('position', 'Сургалтын алба')
@@ -195,15 +216,25 @@ class _SendRequestPageState extends State<SendRequestPage>
             .not('user_id', 'is', null)
             .limit(1)
             .maybeSingle();
-
-        if (fallback != null) adminIds.add(fallback['id'] as int);
+        if (alba != null) adminIds.add(alba['id'] as int);
       }
-    } else if (_selectedCategory!.label == 'Захиргааны' ||
-        _selectedCategory!.label == 'Орчны' ||
-        _selectedCategory!.label == 'Бусад') {
-      // Гурвуул → оюутаны school-ийн Сургалтын алба
+
+      // 4. Last resort — аль ч Сургалтын алба
+      if (adminIds.isEmpty) {
+        final any = await _client
+            .from('admins')
+            .select('id')
+            .eq('position', 'Сургалтын алба')
+            .eq('status', 'active')
+            .not('user_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+        if (any != null) adminIds.add(any['id'] as int);
+      }
+    } else {
+      // ЗАХИРГААНЫ / ОРЧНЫ / БУСАД → Сургалтын алба
       if (studentSchool.isNotEmpty) {
-        final data = await _client
+        final alba = await _client
             .from('admins')
             .select('id')
             .eq('position', 'Сургалтын алба')
@@ -212,11 +243,23 @@ class _SendRequestPageState extends State<SendRequestPage>
             .not('user_id', 'is', null)
             .limit(1)
             .maybeSingle();
-
-        if (data != null) adminIds.add(data['id'] as int);
+        if (alba != null) adminIds.add(alba['id'] as int);
       }
 
-      // Бусад → нэмэлт сонгосон admin байвал нэмнэ
+      // School-аар олдохгүй бол — аль ч Сургалтын алба
+      if (adminIds.isEmpty) {
+        final any = await _client
+            .from('admins')
+            .select('id')
+            .eq('position', 'Сургалтын алба')
+            .eq('status', 'active')
+            .not('user_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+        if (any != null) adminIds.add(any['id'] as int);
+      }
+
+      // БУСАД: нэмэлт admin сонгосон бол нэмнэ
       if (_selectedCategory!.label == 'Бусад' && _selectedAdmin != null) {
         final selectedId = _selectedAdmin!['id'] as int;
         if (!adminIds.contains(selectedId)) adminIds.add(selectedId);
@@ -246,7 +289,6 @@ class _SendRequestPageState extends State<SendRequestPage>
     try {
       String? fileUrl;
 
-      // ── Файл upload ────────────────────────────────────────────────────
       if (_pickedFile != null) {
         final fileName =
             '${DateTime.now().millisecondsSinceEpoch}_${_pickedFile!.name}';
@@ -268,26 +310,33 @@ class _SendRequestPageState extends State<SendRequestPage>
         fileUrl = _client.storage.from('request-files').getPublicUrl(fileName);
       }
 
-      // ── Оюутаны мэдээлэл нэг удаа авах ───────────────────────────────
+      // Оюутны мэдээлэл
       final studentInfo = await _getStudentInfo();
       final studentId = studentInfo['student_id'];
       final studentSchool = studentInfo['school'] as String;
-      final studentFaculty = studentInfo['faculty'] as String;
+      final studentDepartment = studentInfo['department'] as String;
 
-      // ── Admin ID жагсаалт авах ─────────────────────────────────────────
-      final adminIds = await _resolveAdminIds(studentSchool, studentFaculty);
+      debugPrint('🎓 Student school: "$studentSchool"');
+      debugPrint('🏛️ Student department: "$studentDepartment"');
+
+      // Admin шийдвэрлэх
+      final adminIds = await _resolveAdminIds(studentSchool, studentDepartment);
+
+      debugPrint('👤 Resolved admin IDs: $adminIds');
 
       if (adminIds.isEmpty) {
         if (mounted) {
           setState(() => _isLoading = false);
-          _showSnack('Хариуцсан admin олдсонгүй', isError: true);
+          _showSnack(
+            'Хариуцсан admin олдсонгүй. Дараа дахин оролдоно уу.',
+            isError: true,
+          );
         }
         return;
       }
 
-      // ── Тус тусд нь insert + мэдэгдэл явуулах ────────────────────────
+      // Тус тусд нь insert + мэдэгдэл
       for (final adminId in adminIds) {
-        // 1. Хүсэлт insert
         await _client.from('requests').insert({
           'student_id': studentId,
           'type': 'request',
@@ -300,14 +349,12 @@ class _SendRequestPageState extends State<SendRequestPage>
           if (fileUrl != null) 'file_url': fileUrl,
         });
 
-        // 2. Admin-ий user_id авах
         final adminData = await _client
             .from('admins')
             .select('user_id')
             .eq('id', adminId)
             .maybeSingle();
 
-        // 3. Мэдэгдэл үүсгэх
         if (adminData?['user_id'] != null) {
           await _client.from('notifications').insert({
             'user_id': adminData!['user_id'],
@@ -331,6 +378,7 @@ class _SendRequestPageState extends State<SendRequestPage>
         _showSnack('Хүсэлт амжилттай илгээгдлээ!');
       }
     } catch (e) {
+      debugPrint('❌ Submit error: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         _showSnack('Алдаа гарлаа: $e', isError: true);
@@ -363,7 +411,6 @@ class _SendRequestPageState extends State<SendRequestPage>
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -383,7 +430,6 @@ class _SendRequestPageState extends State<SendRequestPage>
               _buildCategoryGrid(),
               const SizedBox(height: 24),
 
-              // Бусад → нэмэлт admin хайх (заавал биш)
               if (_selectedCategory?.label == 'Бусад') ...[
                 _buildSectionTitle('ХҮЛЭЭН АВАГЧ НЭМЭХ (ЗААВАЛ БИШ)'),
                 const SizedBox(height: 6),
@@ -406,7 +452,8 @@ class _SendRequestPageState extends State<SendRequestPage>
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'Хүсэлт таны салбар сургуулийн Сургалтын алба руу автоматаар явна. Тэнхимийн эрхлэгч нэмэхийг хүсвэл доороос хайна уу.',
+                          'Хүсэлт таны салбар сургуулийн Сургалтын алба руу автоматаар явна. '
+                          'Тэнхимийн эрхлэгч нэмэхийг хүсвэл доороос хайна уу.',
                           style: TextStyle(
                             color: _textSecondary,
                             fontSize: 11,
@@ -808,7 +855,6 @@ class _SendRequestPageState extends State<SendRequestPage>
 // ═══════════════════════════════════════════════════════════════════════════════
 class AdminSearchField extends StatefulWidget {
   final Function(Map<String, dynamic>? admin) onSelected;
-
   const AdminSearchField({super.key, required this.onSelected});
 
   @override
@@ -843,7 +889,9 @@ class _AdminSearchFieldState extends State<AdminSearchField> {
     try {
       final data = await _client
           .from('admins')
-          .select('id, first_name, last_name, email, position, faculty, school')
+          .select(
+            'id, first_name, last_name, email, position, department, school',
+          )
           .eq('status', 'active')
           .not('user_id', 'is', null)
           .or(
@@ -867,9 +915,9 @@ class _AdminSearchFieldState extends State<AdminSearchField> {
     setState(() {
       _selected = admin;
       _showResults = false;
-      final fn = admin['first_name'] ?? '';
       final ln = admin['last_name'] ?? '';
-      _controller.text = '$fn $ln'.trim();
+      final fn = admin['first_name'] ?? '';
+      _controller.text = '$ln $fn'.trim();
     });
     _focusNode.unfocus();
     widget.onSelected(admin);
@@ -886,9 +934,7 @@ class _AdminSearchFieldState extends State<AdminSearchField> {
   }
 
   String _fullName(Map<String, dynamic> a) {
-    final fn = a['first_name'] ?? '';
-    final ln = a['last_name'] ?? '';
-    return '$fn $ln'.trim();
+    return '${a['last_name'] ?? ''} ${a['first_name'] ?? ''}'.trim();
   }
 
   @override

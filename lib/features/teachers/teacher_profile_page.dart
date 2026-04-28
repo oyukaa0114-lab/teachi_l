@@ -224,6 +224,21 @@ class _TeacherProfilePageState extends State<TeacherProfilePage> {
               ),
 
             const SizedBox(height: 8),
+
+            if (rank.isNotEmpty || status.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (rank.isNotEmpty) _badge(rank, const Color(0xFF4C6EF5)),
+                    if (rank.isNotEmpty && status.isNotEmpty)
+                      const SizedBox(width: 8),
+                    if (status.isNotEmpty)
+                      _badge(status, const Color(0xFF2ECC71)),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -385,32 +400,6 @@ class _TeacherProfilePageState extends State<TeacherProfilePage> {
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
               ),
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A2847),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.07)),
-            ),
-            child: Column(
-              children: [
-                _buildMenuTile(
-                  context,
-                  Icons.notifications_outlined,
-                  'Мэдэгдэл',
-                  const Color(0xFF2ECC71),
-                  () {},
-                ),
-                _divider(),
-                _buildMenuTile(
-                  context,
-                  Icons.delete_outline,
-                  'Кэш цэвэрлэх',
-                  const Color(0xFFE74C3C),
-                  () {},
-                ),
-              ],
             ),
           ),
 

@@ -6,9 +6,11 @@ class AdminTeacherDetailPage extends StatefulWidget {
     super.key,
     required this.teacherName,
     required this.teacherId,
+    this.embedded = false,
   });
   final String teacherName;
   final int teacherId;
+  final bool embedded;
 
   @override
   State<AdminTeacherDetailPage> createState() => _AdminTeacherDetailPageState();
@@ -28,9 +30,12 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
   Future<void> _loadReviews() async {
     setState(() => _isLoading = true);
     try {
+      // ── Оюутны нэр, имэйл join хийж татна ──────────────────────────────
       final data = await _client
           .from('evaluations')
-          .select()
+          .select(
+            '*, Students!fk_evaluations_student(first_name, last_name, email)',
+          )
           .eq('teacher_id', widget.teacherId)
           .order('created_at', ascending: false);
       setState(() {
@@ -38,6 +43,7 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('Load reviews error: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -61,6 +67,7 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) return _buildContent();
     return Scaffold(
       backgroundColor: const Color(0xFF0F1C3F),
       appBar: AppBar(
@@ -85,11 +92,21 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF4C6EF5)),
-            )
-          : SingleChildScrollView(
+      body: _buildContent(),
+    );
+  }
+
+  Widget _buildContent() {
+    return _isLoading
+        ? const Center(
+            child: CircularProgressIndicator(color: Color(0xFF4C6EF5)),
+          )
+        : RefreshIndicator(
+            onRefresh: _loadReviews,
+            color: const Color(0xFF4C6EF5),
+            backgroundColor: const Color(0xFF12182B),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
@@ -101,7 +118,7 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
                 ],
               ),
             ),
-    );
+          );
   }
 
   Widget _buildStatsCard() {
@@ -299,83 +316,146 @@ class _AdminTeacherDetailPageState extends State<AdminTeacherDetailPage> {
           ),
         ),
         const SizedBox(height: 12),
-        ..._reviews.map((review) {
-          final rating = ((review['rating'] as num?)?.toInt()) ?? 0;
-          final comment = review['comment'] as String? ?? '';
-          final date = ((review['created_at'] as String?) ?? '2025.01.01')
-              .substring(0, 10)
-              .replaceAll('-', '.');
-          return Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const CircleAvatar(
-                          radius: 14,
-                          backgroundColor: Color(0xFFEEEEEE),
-                          child: Icon(
-                            Icons.person,
-                            size: 16,
-                            color: Colors.black45,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Нэргүй',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      date,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.black38,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: List.generate(
-                    5,
-                    (i) => Icon(
-                      i < rating ? Icons.star : Icons.star_border,
-                      color: const Color(0xFFFFD700),
-                      size: 16,
-                    ),
-                  ),
-                ),
-                if (comment.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    comment,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.black54,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          );
-        }),
+        ..._reviews.map((review) => _buildReviewCard(review)),
       ],
     );
+  }
+
+  Widget _buildReviewCard(Map<String, dynamic> review) {
+    final rating = ((review['rating'] as num?)?.toInt()) ?? 0;
+    final comment = review['comment'] as String? ?? '';
+    final date = ((review['created_at'] as String?) ?? '2025.01.01')
+        .substring(0, 10)
+        .replaceAll('-', '.');
+
+    // ── Нэргүй эсэх ──────────────────────────────────────────────────────
+    final isAnon = review['is_anonymous'] == true;
+    final st = review['Students'];
+    final String studentName = isAnon
+        ? 'Нэргүй'
+        : (st != null
+              ? '${st['last_name'] ?? ''} ${st['first_name'] ?? ''}'.trim()
+              : 'Суралцагч');
+    final String? studentEmail = isAnon ? null : st?['email'] as String?;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12182B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header: нэр + огноо ────────────────────────────────────────
+          Row(
+            children: [
+              // Avatar
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: isAnon
+                    ? Colors.white.withOpacity(0.08)
+                    : const Color(0xFF4C6EF5).withOpacity(0.2),
+                child: Icon(
+                  isAnon ? Icons.visibility_off : Icons.person,
+                  size: 16,
+                  color: isAnon ? Colors.white38 : const Color(0xFF4C6EF5),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Нэр + имэйл
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      studentName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (studentEmail != null && studentEmail.isNotEmpty)
+                      Text(
+                        studentEmail,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Огноо
+              Text(
+                date,
+                style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // ── Одны үнэлгээ + тоо ────────────────────────────────────────
+          Row(
+            children: [
+              ...List.generate(
+                5,
+                (i) => Icon(
+                  i < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: const Color(0xFFFFD700),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _ratingBadgeColor(rating).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$rating/5',
+                  style: TextStyle(
+                    color: _ratingBadgeColor(rating),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // ── Сэтгэгдэл ─────────────────────────────────────────────────
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                comment,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Color _ratingBadgeColor(int rating) {
+    if (rating >= 4) return const Color(0xFF34D399);
+    if (rating == 3) return const Color(0xFFFFBF47);
+    if (rating >= 1) return const Color(0xFFF87171);
+    return const Color(0xFF64748B);
   }
 }

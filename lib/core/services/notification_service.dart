@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class NotificationService {
@@ -11,7 +12,8 @@ class NotificationService {
           .eq('user_id', userId)
           .eq('is_read', false);
       return (data as List).length;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('NotificationService.getUnreadCount error: $e');
       return 0;
     }
   }
@@ -24,7 +26,8 @@ class NotificationService {
           .eq('user_id', userId)
           .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(data);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('NotificationService.getAll error: $e');
       return [];
     }
   }

@@ -65,7 +65,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
       final data = await _client
           .from('requests')
           .select(
-            '*, Teachers!requests_teacher_id_fkey(first_name, last_name), admins(position, faculty, last_name, first_name, email), request_messages(content, sender_role, created_at)',
+            '*, Teachers!requests_teacher_id_fkey(first_name, last_name), admins!requests_admin_id_fkey(position, department, last_name, first_name, email), request_messages!request_messages_request_id_fkey(content, sender_role, created_at)',
           )
           .eq('student_id', studentId)
           .order('created_at', ascending: false);
@@ -76,6 +76,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         _error = null;
       });
     } catch (e) {
+      debugPrint('Request load error: $e');
       setState(() {
         _error = 'Мэдээлэл ачааллахад алдаа гарлаа';
         _isLoading = false;
@@ -375,7 +376,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                           final adminPosition =
                               adminData?['position'] as String? ?? '';
                           final adminDept =
-                              adminData?['faculty'] as String? ?? '';
+                              adminData?['department'] as String? ?? '';
                           final adminLastName =
                               adminData?['last_name'] as String? ?? '';
                           final adminFirstName =

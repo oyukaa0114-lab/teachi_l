@@ -1,3 +1,4 @@
+// Сурагч - Багшид үнэлгээ өгөх дэлгэц (имэйлтэй)
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,17 +27,44 @@ class _StudentTeacherEvaluationPageState
   final _commentController = TextEditingController();
   final _client = Supabase.instance.client;
   List<Map<String, dynamic>> _reviews = [];
+  String? _teacherEmail;
 
   @override
   void initState() {
     super.initState();
     _loadReviews();
+    _loadTeacherEmail();
   }
 
   @override
   void dispose() {
     _commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTeacherEmail() async {
+    try {
+      final teacherData = await _client
+          .from('Teachers')
+          .select('user_id')
+          .eq('id', widget.teacherId)
+          .single();
+
+      final userId = teacherData['user_id'];
+      if (userId == null) return;
+
+      final userData = await _client
+          .from('Users')
+          .select('email')
+          .eq('id', userId)
+          .single();
+
+      setState(() {
+        _teacherEmail = userData['email'] as String?;
+      });
+    } catch (e) {
+      debugPrint('Email load error: $e');
+    }
   }
 
   Future<void> _loadReviews() async {
@@ -48,7 +76,6 @@ class _StudentTeacherEvaluationPageState
           .order('created_at', ascending: false);
       setState(() => _reviews = List<Map<String, dynamic>>.from(data));
     } catch (e) {
-      // join алдаа гарвал энгийн query
       try {
         final data = await _client
             .from('evaluations')
@@ -64,9 +91,9 @@ class _StudentTeacherEvaluationPageState
 
   double get _avgRating {
     if (_reviews.isEmpty) return 0;
-    return _reviews.fold<int>(
+    return _reviews.fold<double>(
           0,
-          (s, r) => s + ((r['rating'] as num?)?.toInt() ?? 0),
+          (s, r) => s + ((r['rating'] as num?)?.toDouble() ?? 0),
         ) /
         _reviews.length;
   }
@@ -81,6 +108,10 @@ class _StudentTeacherEvaluationPageState
     setState(() => _isLoading = true);
     try {
       final userId = context.read<AuthController>().currentUser?['id'];
+      if (userId == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
       final studentData = await _client
           .from('Students')
           .select('id')
@@ -252,6 +283,30 @@ class _StudentTeacherEvaluationPageState
                           'Хичээл заах үнэлгээ',
                           style: TextStyle(color: Colors.white54, fontSize: 13),
                         ),
+                        if (_teacherEmail != null &&
+                            _teacherEmail!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.email_outlined,
+                                color: Colors.white38,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _teacherEmail!,
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Row(
                           children: List.generate(
@@ -532,12 +587,12 @@ class _StudentTeacherEvaluationPageState
   Widget _buildReviewCard(Map<String, dynamic> review) {
     final rating = ((review['rating'] as num?)?.toInt()) ?? 0;
     final comment = review['comment'] as String? ?? '';
-    final date = ((review['created_at'] as String?) ?? '')
-        .substring(0, 10)
-        .replaceAll('-', '.');
+    final rawDate = review['created_at'] as String? ?? '';
+    final date = rawDate.length >= 10
+        ? rawDate.substring(0, 10).replaceAll('-', '.')
+        : '';
     final isAnon = review['is_anonymous'] as bool? ?? false;
 
-    // Суралцагчийн мэдээлэл
     final st = review['Students'];
     final lastName = st?['last_name'] as String? ?? '';
     final firstName = st?['first_name'] as String? ?? '';
@@ -545,7 +600,7 @@ class _StudentTeacherEvaluationPageState
     final fullName = isAnon
         ? 'Нэргүй'
         : (lastName.isNotEmpty || firstName.isNotEmpty)
-        ? '${lastName.isNotEmpty ? "$lastName." : ""} $firstName'.trim()
+        ? '${lastName.isNotEmpty ? '$lastName.' : ''} $firstName'.trim()
         : 'Суралцагч';
 
     return Container(
@@ -603,9 +658,12 @@ class _StudentTeacherEvaluationPageState
                   ),
                 ],
               ),
-              Text(
-                date,
-                style: const TextStyle(fontSize: 11, color: Colors.white30),
+              Flexible(
+                child: Text(
+                  date,
+                  style: const TextStyle(fontSize: 10, color: Colors.white30),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

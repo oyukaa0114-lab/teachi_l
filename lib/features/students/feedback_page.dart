@@ -537,7 +537,9 @@ class _AdminSelectFieldState extends State<AdminSelectField> {
     try {
       var query = _client
           .from('admins')
-          .select('id, position, faculty, school, last_name, first_name, email')
+          .select(
+            'id, position, department, school, last_name, first_name, email',
+          )
           .eq('status', 'active')
           .not('user_id', 'is', null);
 
@@ -548,7 +550,7 @@ class _AdminSelectFieldState extends State<AdminSelectField> {
       final data = await query.order('position');
 
       final filtered = (data as List).where((a) {
-        final aFaculty = a['faculty'] as String? ?? '';
+        final aFaculty = a['department'] as String? ?? '';
         if (aFaculty.isEmpty) return true;
         return aFaculty == (widget.studentFaculty ?? '');
       }).toList();
@@ -606,9 +608,9 @@ class _AdminSelectFieldState extends State<AdminSelectField> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if ((_selected!['faculty'] as String? ?? '').isNotEmpty)
+                  if ((_selected!['department'] as String? ?? '').isNotEmpty)
                     Text(
-                      _selected!['faculty'],
+                      _selected!['department'],
                       style: const TextStyle(
                         color: Colors.white54,
                         fontSize: 11,
@@ -711,9 +713,10 @@ class _AdminSelectFieldState extends State<AdminSelectField> {
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                                if ((a['faculty'] as String? ?? '').isNotEmpty)
+                                if ((a['department'] as String? ?? '')
+                                    .isNotEmpty)
                                   Text(
-                                    a['faculty'],
+                                    a['department'],
                                     style: const TextStyle(
                                       color: Colors.white38,
                                       fontSize: 11,

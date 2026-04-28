@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/auth_controller.dart';
-import '../auth/login_page.dart';
 import '../teachers/request_chat_page.dart';
 import '../../core/services/notification_service.dart';
 import '../../features/notifications_page.dart';
 import 'admin_profile.dart';
-import 'admin_teacher_detail_page.dart';
+import 'admin_evaluation_page.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -23,6 +22,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int? _adminId;
   int? _adminUserId;
   int _unreadCount = 0;
+
+  bool get _isTenhimiinErkhlegt =>
+      (_adminData?['position'] as String? ?? '').contains('Тэнхимийн эрхлэгч');
 
   @override
   void initState() {
@@ -71,6 +73,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             type: PostgresChangeFilterType.eq,
             column: 'user_id',
             value: _adminUserId,
+            // .toString(), // Realtime Web: int биш String байх ёстой
           ),
           callback: (_) => _loadUnreadCount(),
         )
@@ -79,7 +82,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   void dispose() {
-    _client.removeAllChannels();
+    // _client.removeAllChannels(); realtime-д бүх сувгийг устгадаг тул зөвхөн өөрийнхөө сувгийг устгаж байна
+    _client.channel('admin_bell_$_adminUserId').unsubscribe();
     super.dispose();
   }
 
@@ -87,7 +91,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthController>().currentUser;
     final username = user?['username'] ?? 'Захиргаа';
-
     final firstName = _adminData?['first_name'] as String? ?? '';
     final lastName = _adminData?['last_name'] as String? ?? '';
     final position = _adminData?['position'] as String? ?? '';
@@ -95,10 +98,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ? '${lastName.isNotEmpty ? "$lastName." : ""} $firstName'.trim()
         : username;
 
+    // Хоёуланд нь: Хүсэлтүүд | Үнэлгээ | Профайл (3 tab)
+    // Тэнхимийн эрхлэгч: Хүсэлтүүд = admin_id-аар ирсэн оюутны санал/гомдол/хүсэлт
+    //                     Үнэлгээ    = өөрийн тэнхимийн багш нарын үнэлгээ + санал/гомдол
     final List<Widget> pages = [
-      _RequestsTab(adminId: _adminId),
-      const _EvaluationsTab(),
+      _RequestsTab(adminId: _adminId, adminData: _adminData),
+      AdminEvaluationPage(adminData: _adminData),
       AdminProfilePage(adminData: _adminData),
+    ];
+
+    const navItems = [
+      BottomNavigationBarItem(
+        icon: Icon(Icons.inbox_outlined),
+        activeIcon: Icon(Icons.inbox),
+        label: 'Хүсэлтүүд',
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.star_outline),
+        activeIcon: Icon(Icons.star),
+        label: 'Үнэлгээ',
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.person_outline),
+        activeIcon: Icon(Icons.person),
+        label: 'Профайл',
+      ),
     ];
 
     return Scaffold(
@@ -156,30 +180,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           selectedItemColor: const Color(0xFF4C6EF5),
           unselectedItemColor: Colors.white38,
           elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.inbox_outlined),
-              activeIcon: Icon(Icons.inbox),
-              label: 'Хүсэлтүүд',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.star_outline),
-              activeIcon: Icon(Icons.star),
-              label: 'Үнэлгээ',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Профайл',
-            ),
-          ],
+          items: navItems,
         ),
       ),
     );
   }
 }
 
-// ── AppBar дахь мэдэгдлийн товч ──────────────────────────────────────────────
+// ── Notification bell ────────────────────────────────────────────────────────
 class _NotificationBellButton extends StatelessWidget {
   final int userId;
   final int unreadCount;
@@ -238,11 +246,14 @@ class _NotificationBellButton extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════
-// TAB 1: Хүсэлт / Санал / Гомдол
+// Хүсэлтүүд Tab — Сургалтын алба болон бусад
 // ════════════════════════════════════════════
 class _RequestsTab extends StatefulWidget {
   final int? adminId;
-  const _RequestsTab({this.adminId});
+  final Map<String, dynamic>? adminData;
+
+  const _RequestsTab({this.adminId, this.adminData});
+
   @override
   State<_RequestsTab> createState() => _RequestsTabState();
 }
@@ -276,6 +287,7 @@ class _RequestsTabState extends State<_RequestsTab>
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       var query = _client
@@ -291,6 +303,8 @@ class _RequestsTabState extends State<_RequestsTab>
 
       final all = await query.order('created_at', ascending: false);
       final list = List<Map<String, dynamic>>.from(all);
+
+      if (!mounted) return;
       setState(() {
         _feedbacks = list.where((r) => r['type'] == 'feedback').toList();
         _complaints = list.where((r) => r['type'] == 'gomdol').toList();
@@ -299,12 +313,14 @@ class _RequestsTabState extends State<_RequestsTab>
       });
     } catch (e) {
       debugPrint('Admin requests error: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _updateStatus(int id, String status) async {
     await _client.from('requests').update({'status': status}).eq('id', id);
+    if (!mounted) return;
     _loadData();
   }
 
@@ -648,221 +664,6 @@ class _RequestsTabState extends State<_RequestsTab>
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ════════════════════════════════════════════
-// TAB 2: Багшийн үнэлгээ
-// ════════════════════════════════════════════
-class _EvaluationsTab extends StatefulWidget {
-  const _EvaluationsTab();
-  @override
-  State<_EvaluationsTab> createState() => _EvaluationsTabState();
-}
-
-class _EvaluationsTabState extends State<_EvaluationsTab> {
-  final _client = Supabase.instance.client;
-  List<Map<String, dynamic>> _teachers = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    try {
-      final teachers = await _client
-          .from('Teachers')
-          .select('id, first_name, last_name, teacher_code, rank')
-          .order('last_name');
-
-      final List<Map<String, dynamic>> result = [];
-      for (final t in teachers) {
-        final evals = await _client
-            .from('evaluations')
-            .select('rating')
-            .eq('teacher_id', t['id']);
-        final list = List<Map<String, dynamic>>.from(evals);
-        double avg = 0;
-        if (list.isNotEmpty) {
-          avg =
-              list.fold<int>(
-                0,
-                (s, r) => s + ((r['rating'] as num?)?.toInt() ?? 0),
-              ) /
-              list.length;
-        }
-        result.add({...t, 'avg': avg, 'count': list.length});
-      }
-      result.sort((a, b) => (b['avg'] as double).compareTo(a['avg'] as double));
-      setState(() {
-        _teachers = result;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF4C6EF5)),
-      );
-    }
-    if (_teachers.isEmpty) {
-      return const Center(
-        child: Text(
-          'Багш байхгүй байна',
-          style: TextStyle(color: Colors.white38),
-        ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _teachers.length,
-        itemBuilder: (_, i) {
-          final t = _teachers[i];
-          final avg = t['avg'] as double;
-          final count = t['count'] as int;
-          final name = '${t['last_name'] ?? ''} ${t['first_name'] ?? ''}'
-              .trim();
-          final code = t['teacher_code'] as String? ?? '';
-          final rank = t['rank'] as String? ?? '';
-
-          return GestureDetector(
-            onTap: () {
-              final id = ((t['id'] as num?)?.toInt()) ?? 0;
-              if (id == 0) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      AdminTeacherDetailPage(teacherName: name, teacherId: id),
-                ),
-              );
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: i == 0
-                          ? Colors.amber.withOpacity(0.2)
-                          : i == 1
-                          ? Colors.grey.withOpacity(0.2)
-                          : i == 2
-                          ? Colors.brown.withOpacity(0.2)
-                          : Colors.white10,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${i + 1}',
-                        style: TextStyle(
-                          color: i == 0
-                              ? Colors.amber
-                              : i == 1
-                              ? Colors.grey
-                              : i == 2
-                              ? Colors.brown
-                              : Colors.white38,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (rank.isNotEmpty)
-                          Text(
-                            rank,
-                            style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 11,
-                            ),
-                          ),
-                        if (code.isNotEmpty)
-                          Text(
-                            code,
-                            style: const TextStyle(
-                              color: Colors.white24,
-                              fontSize: 10,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Colors.amber,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            avg.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: Colors.amber,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '$count үнэлгээ',
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.chevron_right,
-                    color: Colors.white24,
-                    size: 20,
                   ),
                 ],
               ),

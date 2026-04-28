@@ -1,10 +1,7 @@
-// Сурагч - Багшид үнэлгээ өгөх дэлгэц
+// Сурагч - Салбар сургууль → Тэнхим (dropdown) → Багшийн жагсаалт (шинэ хуудас)
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:teachi_l/features/students/teacher_evaluation_page.dart';
-import '../auth/auth_controller.dart';
-import 'student_teacher_evaluation_page.dart';
+import 'teacher_list_page.dart';
 
 class EvaluationPage extends StatefulWidget {
   const EvaluationPage({super.key});
@@ -15,50 +12,102 @@ class EvaluationPage extends StatefulWidget {
 
 class _EvaluationPageState extends State<EvaluationPage> {
   final _client = Supabase.instance.client;
-  List<Map<String, dynamic>> _teachers = [];
-  bool _isLoading = true;
+
+  List<String> _schools = [];
+  bool _isLoadingSchools = true;
   String? _error;
+
+  // Аль сургууль нээгдсэн
+  String? _expandedSchool;
+  List<String> _departments = [];
+  bool _isLoadingDepartments = false;
 
   @override
   void initState() {
     super.initState();
-    _loadTeachers();
+    _loadSchools();
   }
 
-  Future<void> _loadTeachers() async {
+  Future<void> _loadSchools() async {
+    setState(() {
+      _isLoadingSchools = true;
+      _error = null;
+    });
     try {
-      final studentId = context.read<AuthController>().currentUser?['id'];
-
-      final studentData = await _client
-          .from('Students')
-          .select('school, faculty, department')
-          .eq('user_id', studentId)
-          .single();
-
-      final school = studentData['school'];
-      final faculty = studentData['faculty'];
-      final department = studentData['department'];
-
       final data = await _client
           .from('Teachers')
-          .select(
-            'id, user_id, last_name, first_name, rank, school, faculty, department',
-          )
-          .eq('school', school)
-          .eq('faculty', faculty)
-          .eq('department', department)
-          .order('id');
+          .select('school')
+          .not('school', 'is', null);
+
+      final schools = <String>{};
+      for (final row in data) {
+        final s = row['school'] as String?;
+        if (s != null && s.isNotEmpty) schools.add(s);
+      }
 
       setState(() {
-        _teachers = List<Map<String, dynamic>>.from(data);
-        _isLoading = false;
+        _schools = schools.toList()..sort();
+        _isLoadingSchools = false;
       });
     } catch (e) {
       setState(() {
-        _error = 'Багш нарыг ачааллахад алдаа гарлаа';
-        _isLoading = false;
+        _error = 'Салбар сургуулиудыг ачааллахад алдаа гарлаа';
+        _isLoadingSchools = false;
       });
     }
+  }
+
+  Future<void> _loadDepartments(String school) async {
+    setState(() {
+      _isLoadingDepartments = true;
+      _departments = [];
+    });
+    try {
+      final data = await _client
+          .from('Teachers')
+          .select('department')
+          .eq('school', school)
+          .not('department', 'is', null);
+
+      final departments = <String>{};
+      for (final row in data) {
+        final d = row['department'] as String?;
+        if (d != null && d.isNotEmpty) departments.add(d);
+      }
+
+      setState(() {
+        _departments = departments.toList()..sort();
+        _isLoadingDepartments = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingDepartments = false;
+      });
+    }
+  }
+
+  void _onSchoolTap(String school) {
+    if (_expandedSchool == school) {
+      setState(() {
+        _expandedSchool = null;
+        _departments = [];
+      });
+    } else {
+      setState(() {
+        _expandedSchool = school;
+      });
+      _loadDepartments(school);
+    }
+  }
+
+  void _onDepartmentTap(String department) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            TeacherListPage(school: _expandedSchool!, department: department),
+      ),
+    );
   }
 
   @override
@@ -73,7 +122,7 @@ class _EvaluationPageState extends State<EvaluationPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Багшийн жагсаалт',
+          'Салбар сургууль',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -81,15 +130,15 @@ class _EvaluationPageState extends State<EvaluationPage> {
             icon: const Icon(Icons.refresh, color: Colors.white70),
             onPressed: () {
               setState(() {
-                _isLoading = true;
-                _error = null;
+                _expandedSchool = null;
+                _departments = [];
               });
-              _loadTeachers();
+              _loadSchools();
             },
           ),
         ],
       ),
-      body: _isLoading
+      body: _isLoadingSchools
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : _error != null
           ? Center(
@@ -105,13 +154,7 @@ class _EvaluationPageState extends State<EvaluationPage> {
                   Text(_error!, style: const TextStyle(color: Colors.white70)),
                   const SizedBox(height: 16),
                   TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _isLoading = true;
-                        _error = null;
-                      });
-                      _loadTeachers();
-                    },
+                    onPressed: _loadSchools,
                     icon: const Icon(Icons.refresh, color: Colors.white),
                     label: const Text(
                       'Дахин оролдох',
@@ -121,19 +164,15 @@ class _EvaluationPageState extends State<EvaluationPage> {
                 ],
               ),
             )
-          : _teachers.isEmpty
+          : _schools.isEmpty
           ? const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.person_off_outlined,
-                    color: Colors.white24,
-                    size: 52,
-                  ),
+                  Icon(Icons.school_outlined, color: Colors.white24, size: 52),
                   SizedBox(height: 12),
                   Text(
-                    'Багш олдсонгүй',
+                    'Салбар сургууль олдсонгүй',
                     style: TextStyle(color: Colors.white38),
                   ),
                 ],
@@ -141,115 +180,152 @@ class _EvaluationPageState extends State<EvaluationPage> {
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: _teachers.length,
+              itemCount: _schools.length,
               itemBuilder: (context, index) {
-                final teacher = _teachers[index];
-                final name =
-                    '${teacher['last_name'] ?? ''} ${teacher['first_name'] ?? ''}'
-                        .trim();
-                final id = ((teacher['id'] as num?)?.toInt()) ?? 0;
-                final rank = teacher['rank'] as String? ?? '';
-                final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                final school = _schools[index];
+                final isExpanded = _expandedSchool == school;
 
-                return GestureDetector(
-                  onTap: () {
-                    if (id == 0) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StudentTeacherEvaluationPage(
-                          teacherName: name,
-                          teacherId: id,
+                return Column(
+                  children: [
+                    // ---- Сургууль ----
+                    GestureDetector(
+                      onTap: () => _onSchoolTap(school),
+                      child: Container(
+                        margin: EdgeInsets.only(bottom: isExpanded ? 0 : 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
                         ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A2847),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.07)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF3B5BDB), Color(0xFF4C6EF5)],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF3B5BDB).withOpacity(0.3),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              initials,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A2847),
+                          borderRadius: isExpanded
+                              ? const BorderRadius.vertical(
+                                  top: Radius.circular(16),
+                                )
+                              : BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isExpanded
+                                ? const Color(0xFF4C6EF5).withOpacity(0.3)
+                                : Colors.white.withOpacity(0.07),
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                school,
+                                style: TextStyle(
                                   fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: isExpanded
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
                                   color: Colors.white,
                                 ),
                               ),
-                              if (rank.isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(
-                                  rank,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white38,
+                            ),
+                            AnimatedRotation(
+                              turns: isExpanded ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 200),
+                              child: const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.white38,
+                                size: 24,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ---- Тэнхимүүд (dropdown) ----
+                    if (isExpanded)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E2D52),
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(16),
+                          ),
+                          border: Border.all(
+                            color: const Color(0xFF4C6EF5).withOpacity(0.2),
+                          ),
+                        ),
+                        child: _isLoadingDepartments
+                            ? const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white38,
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4C6EF5).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Үнэлэх',
-                            style: TextStyle(
-                              color: Color(0xFF4C6EF5),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                              )
+                            : _departments.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                  'Тэнхим олдсонгүй',
+                                  style: TextStyle(
+                                    color: Colors.white30,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                children: _departments.asMap().entries.map((
+                                  entry,
+                                ) {
+                                  final idx = entry.key;
+                                  final dept = entry.value;
+                                  final isLast = idx == _departments.length - 1;
+
+                                  return GestureDetector(
+                                    onTap: () => _onDepartmentTap(dept),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: isLast
+                                            ? null
+                                            : Border(
+                                                bottom: BorderSide(
+                                                  color: Colors.white
+                                                      .withOpacity(0.06),
+                                                ),
+                                              ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              dept,
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                          ),
+                                          const Icon(
+                                            Icons.arrow_forward_ios,
+                                            color: Colors.white24,
+                                            size: 14,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                  ],
                 );
               },
             ),

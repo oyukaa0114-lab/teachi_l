@@ -188,17 +188,30 @@ class _RequestChatPageState extends State<RequestChatPage> {
   }
 
   Future<void> _openFile(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Файл нээхэд алдаа гарлаа'),
-            backgroundColor: Colors.red,
-          ),
-        );
+    debugPrint('Opening file URL: $url');
+    try {
+      final uri = Uri.parse(url);
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      }
+    } catch (e) {
+      debugPrint('File open error: $e');
+      try {
+        final uri = Uri.parse(url);
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      } catch (e2) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Файл нээхэд алдаа гарлаа'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }

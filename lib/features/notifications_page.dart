@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../features/auth/auth_controller.dart';
+import 'teachers/request_chat_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key, required int userId});
@@ -66,6 +67,79 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await _client.from('notifications').delete().eq('id', id);
       setState(() => _notifications.removeWhere((n) => n['id'] == id));
     } catch (_) {}
+  }
+
+  Future<void> _openNotification(Map<String, dynamic> notif) async {
+    final type = (notif['type'] ?? '').toString();
+    final role =
+        context.read<AuthController>().currentUser?['role'] as String? ??
+        'student';
+    final senderRole = role == 'super_admin' ? 'admin' : role;
+
+    if (notif['is_read'] != true) {
+      try {
+        await _client
+            .from('notifications')
+            .update({'is_read': true})
+            .eq('id', notif['id']);
+        setState(() => notif['is_read'] = true);
+      } catch (_) {}
+    }
+
+    if (type == 'warning') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Энэ үнэлгээ устгагдсан тул нээх боломжгүй'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final requestId = notif['related_id'] ?? notif['reference_id'];
+    if (requestId == null) return;
+
+    try {
+      final requestData = await _client
+          .from('requests')
+          .select()
+          .eq('id', requestId)
+          .maybeSingle();
+
+      if (requestData == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Хүсэлт олдсонгүй'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestChatPage(
+            request: Map<String, dynamic>.from(requestData),
+            senderRole: senderRole,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Алдаа: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   IconData _notifIcon(String type) {
@@ -215,90 +289,94 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         color: Colors.redAccent,
                       ),
                     ),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isRead
-                            ? const Color(0xFF1A1A2E)
-                            : const Color(0xFF4C6EF5).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _openNotification(notif),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
                           color: isRead
-                              ? Colors.white10
-                              : const Color(0xFF4C6EF5).withOpacity(0.2),
+                              ? const Color(0xFF1A1A2E)
+                              : const Color(0xFF4C6EF5).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isRead
+                                ? Colors.white10
+                                : const Color(0xFF4C6EF5).withOpacity(0.2),
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: color.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                _notifIcon(type),
+                                color: color,
+                                size: 20,
+                              ),
                             ),
-                            child: Icon(
-                              _notifIcon(type),
-                              color: color,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        notif['title'] ?? '',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: isRead
-                                              ? FontWeight.normal
-                                              : FontWeight.w600,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          notif['title'] ?? '',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: isRead
+                                                ? FontWeight.normal
+                                                : FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
+                                      if (!isRead)
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFF4C6EF5),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    notif['body'] ?? '',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 12,
                                     ),
-                                    if (!isRead)
-                                      Container(
-                                        width: 8,
-                                        height: 8,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF4C6EF5),
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  notif['body'] ?? '',
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 12,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  _timeAgo(notif['created_at'] ?? ''),
-                                  style: const TextStyle(
-                                    color: Colors.white24,
-                                    fontSize: 10,
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _timeAgo(notif['created_at'] ?? ''),
+                                    style: const TextStyle(
+                                      color: Colors.white24,
+                                      fontSize: 10,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   );

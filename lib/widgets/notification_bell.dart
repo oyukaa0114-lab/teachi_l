@@ -15,6 +15,7 @@ class _NotificationBellState extends State<NotificationBell> {
   final _client = Supabase.instance.client;
   int _unreadCount = 0;
   RealtimeChannel? _channel;
+  bool _isNavigating = false;
 
   @override
   void initState() {
@@ -57,12 +58,15 @@ class _NotificationBellState extends State<NotificationBell> {
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: () async {
+        if (_isNavigating) return;
+        _isNavigating = true;
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => NotificationsPage(userId: widget.userId),
           ),
         );
+        _isNavigating = false;
         _loadCount();
       },
       icon: Stack(

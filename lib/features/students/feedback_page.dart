@@ -128,17 +128,21 @@ class _FeedbackPageState extends State<FeedbackPage> {
       }
 
       // ── Requests insert ───────────────────────────────────────────────
-      await _client.from('requests').insert({
-        'student_id': _studentId,
-        'type': 'feedback',
-        'category': _selectedCategory,
-        if (_selectedTeacher != null) 'teacher_id': _selectedTeacher!['id'],
-        if (_selectedAdmin != null) 'admin_id': _selectedAdmin!['id'],
-        'title': _titleController.text.trim(),
-        'content': _feedbackController.text.trim(),
-        'is_anonymous': false,
-        if (fileUrl != null) 'file_url': fileUrl,
-      });
+      final insertedFeedback = await _client
+          .from('requests')
+          .insert({
+            'student_id': _studentId,
+            'type': 'feedback',
+            'category': _selectedCategory,
+            if (_selectedTeacher != null) 'teacher_id': _selectedTeacher!['id'],
+            if (_selectedAdmin != null) 'admin_id': _selectedAdmin!['id'],
+            'title': _titleController.text.trim(),
+            'content': _feedbackController.text.trim(),
+            'is_anonymous': false,
+            if (fileUrl != null) 'file_url': fileUrl,
+          })
+          .select('id')
+          .single();
 
       // ── Багш-д мэдэгдэл явуулах ───────────────────────────────────────
       if (_selectedTeacher != null) {
@@ -154,6 +158,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               'type': 'new_request',
               'title': 'Шинэ санал ирлээ',
               'body': _titleController.text.trim(),
+              'related_id': insertedFeedback['id'],
               'is_read': false,
             });
           }
@@ -174,6 +179,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               'type': 'new_request',
               'title': 'Шинэ санал ирлээ',
               'body': _titleController.text.trim(),
+              'related_id': insertedFeedback['id'],
               'is_read': false,
             });
           }

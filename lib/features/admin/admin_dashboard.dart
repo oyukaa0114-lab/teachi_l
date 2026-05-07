@@ -188,7 +188,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 }
 
 // ── Notification bell ────────────────────────────────────────────────────────
-class _NotificationBellButton extends StatelessWidget {
+class _NotificationBellButton extends StatefulWidget {
   final int userId;
   final int unreadCount;
   final VoidCallback onReturn;
@@ -200,14 +200,27 @@ class _NotificationBellButton extends StatelessWidget {
   });
 
   @override
+  State<_NotificationBellButton> createState() =>
+      _NotificationBellButtonState();
+}
+
+class _NotificationBellButtonState extends State<_NotificationBellButton> {
+  bool _isNavigating = false;
+
+  @override
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: () async {
+        if (_isNavigating) return;
+        _isNavigating = true;
         await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => NotificationsPage(userId: userId)),
+          MaterialPageRoute(
+            builder: (_) => NotificationsPage(userId: widget.userId),
+          ),
         );
-        onReturn();
+        _isNavigating = false;
+        widget.onReturn();
       },
       icon: Stack(
         clipBehavior: Clip.none,
@@ -217,7 +230,7 @@ class _NotificationBellButton extends StatelessWidget {
             color: Colors.white,
             size: 26,
           ),
-          if (unreadCount > 0)
+          if (widget.unreadCount > 0)
             Positioned(
               top: -4,
               right: -4,
@@ -229,7 +242,7 @@ class _NotificationBellButton extends StatelessWidget {
                 ),
                 constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 child: Text(
-                  unreadCount > 99 ? '99+' : '$unreadCount',
+                  widget.unreadCount > 99 ? '99+' : '${widget.unreadCount}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 9,

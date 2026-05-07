@@ -337,17 +337,21 @@ class _SendRequestPageState extends State<SendRequestPage>
 
       // Тус тусд нь insert + мэдэгдэл
       for (final adminId in adminIds) {
-        await _client.from('requests').insert({
-          'student_id': studentId,
-          'type': 'request',
-          'category': _selectedCategory!.label,
-          'title': _titleController.text.trim(),
-          'content': _descController.text.trim(),
-          'is_anonymous': false,
-          'status': 'pending',
-          'admin_id': adminId,
-          if (fileUrl != null) 'file_url': fileUrl,
-        });
+        final inserted = await _client
+            .from('requests')
+            .insert({
+              'student_id': studentId,
+              'type': 'request',
+              'category': _selectedCategory!.label,
+              'title': _titleController.text.trim(),
+              'content': _descController.text.trim(),
+              'is_anonymous': false,
+              'status': 'pending',
+              'admin_id': adminId,
+              if (fileUrl != null) 'file_url': fileUrl,
+            })
+            .select('id')
+            .single();
 
         final adminData = await _client
             .from('admins')
@@ -361,6 +365,7 @@ class _SendRequestPageState extends State<SendRequestPage>
             'type': 'new_request',
             'title': 'Шинэ хүсэлт ирлээ',
             'body': _titleController.text.trim(),
+            'related_id': inserted['id'],
             'is_read': false,
           });
         }

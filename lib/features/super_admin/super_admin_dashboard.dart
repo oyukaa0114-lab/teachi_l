@@ -22,7 +22,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   final List<_NavItem> _navItems = [
     _NavItem(icon: Icons.school_rounded, label: 'Багш нар'),
     _NavItem(icon: Icons.admin_panel_settings_rounded, label: 'Админ'),
-    _NavItem(icon: Icons.shield_rounded, label: 'Модерац'),
+    _NavItem(icon: Icons.shield_rounded, label: 'Үнэлгээний хяналт'),
     _NavItem(icon: Icons.analytics_rounded, label: 'Статистик'),
   ];
 

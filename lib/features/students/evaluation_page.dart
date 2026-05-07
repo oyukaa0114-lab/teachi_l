@@ -28,6 +28,8 @@ class _EvaluationPageState extends State<EvaluationPage> {
     _loadSchools();
   }
 
+  String _normalize(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
+
   Future<void> _loadSchools() async {
     setState(() {
       _isLoadingSchools = true;
@@ -41,8 +43,8 @@ class _EvaluationPageState extends State<EvaluationPage> {
 
       final schools = <String>{};
       for (final row in data) {
-        final s = row['school'] as String?;
-        if (s != null && s.isNotEmpty) schools.add(s);
+        final s = _normalize((row['school'] as String?) ?? '');
+        if (s.isNotEmpty) schools.add(s);
       }
 
       setState(() {
@@ -63,16 +65,20 @@ class _EvaluationPageState extends State<EvaluationPage> {
       _departments = [];
     });
     try {
+      // Сургуулийн нэрийг яг тохируулж шүүх боломжгүй (DB дээр зайтай хувилбар
+      // байж болзошгүй) тул бүх өгөгдлийг авч клиент талд normalize-оор
+      // харьцуулна.
       final data = await _client
           .from('Teachers')
-          .select('department')
-          .eq('school', school)
+          .select('school, department')
           .not('department', 'is', null);
 
       final departments = <String>{};
       for (final row in data) {
-        final d = row['department'] as String?;
-        if (d != null && d.isNotEmpty) departments.add(d);
+        final s = _normalize((row['school'] as String?) ?? '');
+        if (s != school) continue;
+        final d = _normalize((row['department'] as String?) ?? '');
+        if (d.isNotEmpty) departments.add(d);
       }
 
       setState(() {

@@ -2,7 +2,7 @@
 // Суурилуулах газар: Supabase Edge Functions
 // Триггер: evaluations хүснэгтэд INSERT хийгдэх бүрт автоматаар ажиллана
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "@supabase/supabase-js";
 
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -10,6 +10,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "llama-3.3-70b-versatile";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 // ══════════════════════════════════════
 // System Prompt — Модератор
@@ -19,7 +24,7 @@ const SYSTEM_PROMPT = `Чи Монгол хэлний сургуулийн үн�
 
 ══ ДОРОМЖЛОЛ ШАЛГАЛТ ══
 Шууд доромжлол:
-  Монгол: тэнэг, мангар, мунхаг, ганган, өөдгүй, хог, муухай, шаахай, мал, нохой, гахай, солиотой, галзуу, могой, худалч, донтой
+  Монгол: тэнэг, новш, мангар, мунхаг, ганган, өөдгүй, хог, муухай, шаахай, мал, нохой, гахай, солиотой, галзуу, могой, худалч, донтой
   Англи: fuck, shit, bitch, asshole, damn, bastard, dick, pussy, cunt, wtf, stfu, whore, slut, retard, idiot, stupid, dumb, moron, loser
   Нууцалсан: f*ck, sh*t, b*tch, f**k
   Латин Монгол: teneg, muuhai, hog, gangan
@@ -56,12 +61,13 @@ async function callGroq(comment: string) {
         { role: "user", content: `Сэтгэгдэл: ${comment}` },
       ],
       temperature: 0.05,
-      max_completion_tokens: 500,
+      max_tokens: 500,
     }),
   });
 
   if (!response.ok) {
-    console.error(`Groq error: ${response.status}`);
+    const errText = await response.text();
+    console.error(`Groq error ${response.status}: ${errText}`);
     return null;
   }
 
@@ -70,7 +76,10 @@ async function callGroq(comment: string) {
 
   // JSON олох
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+  if (!match) {
+    console.error("JSON олдсонгүй:", text);
+    return null;
+  }
 
   try {
     return JSON.parse(match[0]);
@@ -81,9 +90,26 @@ async function callGroq(comment: string) {
 }
 
 // ══════════════════════════════════════
+// Багшийн нэр форматлах
+// ══════════════════════════════════════
+function formatTeacherName(lastName: string | null, firstName: string | null): string {
+  const last = (lastName ?? "").trim();
+  const first = (firstName ?? "").trim();
+  if (last && first) return `${last[0]}. ${first}`;
+  if (first) return first;
+  if (last) return last;
+  return "Багш";
+}
+
+// ══════════════════════════════════════
 // Edge Function handler
 // ══════════════════════════════════════
 Deno.serve(async (req) => {
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+
   try {
     const payload = await req.json();
 
@@ -92,6 +118,7 @@ Deno.serve(async (req) => {
     if (!record) {
       return new Response(JSON.stringify({ error: "No record" }), {
         status: 400,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
     }
 
@@ -101,9 +128,13 @@ Deno.serve(async (req) => {
 
     // Хоосон сэтгэгдэл бол алгасах
     if (!comment || comment.trim() === "") {
-      return new Response(JSON.stringify({ skipped: true, reason: "empty" }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ skipped: true, reason: "empty" }),
+        {
+          status: 200,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        }
+      );
     }
 
     console.log(`Шалгаж байна: evaluation #${evaluationId} — "${comment}"`);
@@ -118,7 +149,10 @@ Deno.serve(async (req) => {
       console.log("AI шалгалт амжилтгүй, алгасав");
       return new Response(
         JSON.stringify({ skipped: true, reason: "ai_failed" }),
-        { status: 200 }
+        {
+          status: 200,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -128,20 +162,24 @@ Deno.serve(async (req) => {
     if (result.is_inappropriate === true) {
       console.log(`⚠️ Зөрчил илэрлээ! Severity: ${result.severity}`);
 
-      // 1) Оюутны мэдээлэл авах
-      let studentUserId: string | null = null;
-      let teacherName = "Багш";
+      // 1) Оюутны user_id авах
+      let studentUserId: number | null = null;
 
       if (studentId) {
-        const { data: student } = await supabase
+        const { data: student, error: studentErr } = await supabase
           .from("Students")
           .select("user_id")
           .eq("id", studentId)
           .single();
-        studentUserId = student?.user_id ?? null;
+        if (studentErr) {
+          console.error("Оюутан олдсонгүй:", studentErr.message);
+        } else {
+          studentUserId = student?.user_id ?? null;
+        }
       }
 
-      // Багшийн нэр авах
+      // 2) Багшийн нэр авах
+      let teacherName = "Багш";
       if (record.teacher_id) {
         const { data: teacher } = await supabase
           .from("Teachers")
@@ -149,23 +187,23 @@ Deno.serve(async (req) => {
           .eq("id", record.teacher_id)
           .single();
         if (teacher) {
-          teacherName =
-            `${teacher.last_name ?? ""}. ${teacher.first_name ?? ""}`.trim();
+          teacherName = formatTeacherName(teacher.last_name, teacher.first_name);
         }
       }
 
-      // 2) Мэдэгдэл илгээх
-      if (studentUserId) {
-        const flaggedWords = result.flagged_words ?? [];
-        const severity = result.severity ?? "medium";
+      // 3) Мэдэгдэл илгээх
+      if (studentUserId !== null) {
+        const flaggedWords: string[] = result.flagged_words ?? [];
+        const severity: string = result.severity ?? "medium";
 
         let severityText = "зөрчил";
         if (severity === "high") severityText = "хүнд зөрчил";
         else if (severity === "medium") severityText = "дунд зөрчил";
+        else if (severity === "low") severityText = "бага зөрчил";
 
         const wordsText =
           flaggedWords.length > 0
-            ? ` Илэрсэн: ${flaggedWords.join(", ")}.`
+            ? ` Илэрсэн үг: ${flaggedWords.join(", ")}.`
             : "";
 
         const { error: notifError } = await supabase
@@ -174,7 +212,7 @@ Deno.serve(async (req) => {
             user_id: studentUserId,
             title: "⚠️ Үнэлгээ устгагдлаа",
             body:
-              `Таны "${teacherName}" багшид бичсэн үнэлгээ доромжлол/хараалын үг агуулсан тул ` +
+              `Таны "${teacherName}" багшид бичсэн үнэлгээ доромжлол/харааль агуулсан тул ` +
               `устгагдлаа (${severityText}).${wordsText} ` +
               `Та зөв, боловсон хэлээр дахин үнэлгээ бичнэ үү.`,
             type: "warning",
@@ -182,22 +220,24 @@ Deno.serve(async (req) => {
           });
 
         if (notifError) {
-          console.error("Мэдэгдэл алдаа:", notifError);
+          console.error("Мэдэгдэл алдаа:", notifError.message);
         } else {
-          console.log("✅ Мэдэгдэл илгээгдлээ");
+          console.log("✅ Мэдэгдэл илгээгдлээ → user_id:", studentUserId);
         }
+      } else {
+        console.warn("studentUserId олдсонгүй, мэдэгдэл явуулаагүй");
       }
 
-      // 3) Үнэлгээг устгах
+      // 4) Үнэлгээг устгах
       const { error: deleteError } = await supabase
         .from("evaluations")
         .delete()
         .eq("id", evaluationId);
 
       if (deleteError) {
-        console.error("Устгах алдаа:", deleteError);
+        console.error("Устгах алдаа:", deleteError.message);
       } else {
-        console.log("✅ Үнэлгээ устгагдлаа");
+        console.log("✅ Үнэлгээ устгагдлаа #", evaluationId);
       }
 
       return new Response(
@@ -209,7 +249,10 @@ Deno.serve(async (req) => {
           flagged_words: result.flagged_words,
           sentiment: result.sentiment,
         }),
-        { status: 200 }
+        {
+          status: 200,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -225,12 +268,19 @@ Deno.serve(async (req) => {
         sentiment: result.sentiment,
         sentiment_score: result.sentiment_score,
       }),
-      { status: 200 }
+      {
+        status: 200,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
     );
   } catch (err) {
     console.error("Edge Function алдаа:", err);
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-    });
+    return new Response(
+      JSON.stringify({ error: String(err) }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
   }
 });

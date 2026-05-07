@@ -29,24 +29,33 @@ class _TeacherListPageState extends State<TeacherListPage> {
     _loadTeachers();
   }
 
+  String _normalize(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+  bool _matches(Map<String, dynamic> t) {
+    final s = _normalize((t['school'] as String?) ?? '');
+    final d = _normalize((t['department'] as String?) ?? '');
+    return s == widget.school && d == widget.department;
+  }
+
   Future<void> _loadTeachers() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
-      // Teachers + Users join хийж имэйл авах
+      // DB дээр зайтай хувилбар байж болохоор бүх багшийг авч клиент талд
+      // normalize-оор шүүнэ.
       final data = await _client
           .from('Teachers')
           .select(
             'id, user_id, last_name, first_name, rank, school, faculty, department, Users(email)',
           )
-          .eq('school', widget.school)
-          .eq('department', widget.department)
           .order('last_name');
 
       setState(() {
-        _teachers = List<Map<String, dynamic>>.from(data);
+        _teachers = List<Map<String, dynamic>>.from(
+          data,
+        ).where(_matches).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -57,12 +66,12 @@ class _TeacherListPageState extends State<TeacherListPage> {
             .select(
               'id, user_id, last_name, first_name, rank, school, faculty, department',
             )
-            .eq('school', widget.school)
-            .eq('department', widget.department)
             .order('last_name');
 
         setState(() {
-          _teachers = List<Map<String, dynamic>>.from(data);
+          _teachers = List<Map<String, dynamic>>.from(
+            data,
+          ).where(_matches).toList();
           _isLoading = false;
         });
       } catch (e2) {

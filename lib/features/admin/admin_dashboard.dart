@@ -7,6 +7,7 @@ import '../../core/services/notification_service.dart';
 import '../../features/notifications_page.dart';
 import 'admin_profile.dart';
 import 'admin_evaluation_page.dart';
+import 'admin_report_dialog.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -153,6 +154,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
         actions: [
+          if (_selectedIndex == 1)
+            IconButton(
+              icon: const Icon(
+                Icons.download_rounded,
+                color: Colors.white70,
+                size: 24,
+              ),
+              tooltip: 'Excel тайлан татах',
+              onPressed: () => AdminReportDialog.show(
+                context,
+                school: _adminData?['school'] as String?,
+                department: _adminData?['department'] as String?,
+                isDepartmentHead: _isTenhimiinErkhlegt,
+              ),
+            ),
           if (_adminUserId != null)
             _NotificationBellButton(
               userId: _adminUserId!,

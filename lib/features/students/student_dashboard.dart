@@ -111,10 +111,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthController>().currentUser;
     final userId = user?['id'] as int?;
-    final username =
-        user?['first_name'] as String? ??
-        user?['username'] as String? ??
-        'Оюутан';
+    final lastName = user?['last_name'] as String? ?? '';
+    final firstName = user?['first_name'] as String? ?? '';
+    final username = (lastName.isNotEmpty || firstName.isNotEmpty)
+        ? '${lastName.isNotEmpty ? "$lastName. " : ""}$firstName'.trim()
+        : (user?['username'] as String? ?? 'Оюутан');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4FF),

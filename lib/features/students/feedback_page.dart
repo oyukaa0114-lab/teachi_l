@@ -27,6 +27,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   PlatformFile? _pickedFile;
   String? _studentSchool;
   String? _studentFaculty;
+  String? _studentDepartment;
   int? _studentId;
 
   @override
@@ -41,13 +42,14 @@ class _FeedbackPageState extends State<FeedbackPage> {
     try {
       final data = await _client
           .from('Students')
-          .select('id, school, faculty')
+          .select('id, school, faculty, department')
           .eq('user_id', userId)
           .maybeSingle();
       if (mounted) {
         setState(() {
           _studentSchool = data?['school'] as String?;
           _studentFaculty = data?['faculty'] as String?;
+          _studentDepartment = data?['department'] as String?;
           _studentId = data?['id'] as int?;
         });
       }
@@ -307,6 +309,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   onSelected: (a) => setState(() => _selectedAdmin = a),
                   studentSchool: _studentSchool,
                   studentFaculty: _studentFaculty,
+                  studentDepartment: _studentDepartment,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -515,12 +518,14 @@ class AdminSelectField extends StatefulWidget {
   final Function(Map<String, dynamic>? admin) onSelected;
   final String? studentSchool;
   final String? studentFaculty;
+  final String? studentDepartment;
 
   const AdminSelectField({
     super.key,
     required this.onSelected,
     this.studentSchool,
     this.studentFaculty,
+    this.studentDepartment,
   });
 
   @override
@@ -555,10 +560,12 @@ class _AdminSelectFieldState extends State<AdminSelectField> {
 
       final data = await query.order('position');
 
+      // department байхгүй → сургуулийн түвшний admin (Сургалтын алба г.м)
+      // department байвал → оюутны department-тай таарах ёстой
       final filtered = (data as List).where((a) {
-        final aFaculty = a['department'] as String? ?? '';
-        if (aFaculty.isEmpty) return true;
-        return aFaculty == (widget.studentFaculty ?? '');
+        final adminDept = a['department'] as String? ?? '';
+        if (adminDept.isEmpty) return true;
+        return adminDept == (widget.studentDepartment ?? '');
       }).toList();
 
       setState(() {

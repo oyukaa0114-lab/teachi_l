@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'admin_report_dialog.dart';
 
 class AdminStatsPage extends StatefulWidget {
   const AdminStatsPage({super.key});
@@ -15,6 +16,13 @@ class _AdminStatsPageState extends State<AdminStatsPage> {
   List<Map<String, dynamic>> _teachers = [];
   List<Map<String, dynamic>> _evaluations = [];
 
+  String? _adminSchool;
+  String? _adminDepartment;
+  String? _adminPosition;
+
+  bool get _isTenhimiinErkhlegt =>
+      (_adminPosition ?? '').contains('Тэнхимийн эрхлэгч');
+
   @override
   void initState() {
     super.initState();
@@ -24,12 +32,42 @@ class _AdminStatsPageState extends State<AdminStatsPage> {
   Future<void> _loadStats() async {
     setState(() => _isLoading = true);
     try {
-      final teachers = await _client
+      final userId = _client.auth.currentUser?.id;
+      if (userId != null) {
+        final adminData = await _client
+            .from('admins')
+            .select('school, position, department')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (adminData != null) {
+          _adminSchool = adminData['school'] as String?;
+          _adminPosition = adminData['position'] as String?;
+          _adminDepartment = adminData['department'] as String?;
+        }
+      }
+
+      var teacherQuery = _client
           .from('Teachers')
           .select('id, last_name, first_name, rank');
-      final evaluations = await _client
-          .from('evaluations')
-          .select('teacher_id, rating, created_at');
+      if (_adminSchool != null && _adminSchool!.isNotEmpty) {
+        teacherQuery = teacherQuery.eq('school', _adminSchool!);
+      }
+      if (_isTenhimiinErkhlegt &&
+          _adminDepartment != null &&
+          _adminDepartment!.isNotEmpty) {
+        teacherQuery = teacherQuery.eq('department', _adminDepartment!);
+      }
+
+      final teachers = await teacherQuery;
+      final teacherIds = (teachers as List).map((t) => t['id']).toList();
+
+      List<dynamic> evaluations = [];
+      if (teacherIds.isNotEmpty) {
+        evaluations = await _client
+            .from('evaluations')
+            .select('teacher_id, rating, created_at')
+            .inFilter('teacher_id', teacherIds);
+      }
 
       setState(() {
         _teachers = List<Map<String, dynamic>>.from(teachers);
@@ -124,6 +162,16 @@ class _AdminStatsPageState extends State<AdminStatsPage> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_rounded, color: Colors.white70),
+            tooltip: 'Excel тайлан татах',
+            onPressed: () => AdminReportDialog.show(
+              context,
+              school: _adminSchool,
+              department: _adminDepartment,
+              isDepartmentHead: _isTenhimiinErkhlegt,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white70),
             onPressed: _loadStats,

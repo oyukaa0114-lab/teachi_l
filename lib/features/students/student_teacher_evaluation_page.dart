@@ -280,7 +280,7 @@ class _StudentTeacherEvaluationPageState
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Хичээл заах үнэлгээ',
+                          'Багшид үнэлгээ өгөх',
                           style: TextStyle(color: Colors.white54, fontSize: 13),
                         ),
                         if (_teacherEmail != null &&

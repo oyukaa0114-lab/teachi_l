@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/auth_controller.dart';
 import 'admin_teacher_detail_page.dart';
 import 'admin_period_page.dart';
+import 'admin_report_dialog.dart';
 import 'admin_stats_page.dart';
 
 class AdminEvaluationPage extends StatefulWidget {
@@ -214,6 +215,20 @@ class _AdminEvaluationPageState extends State<AdminEvaluationPage> {
         ),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(
+            Icons.download_rounded,
+            color: Colors.white70,
+            size: 24,
+          ),
+          tooltip: 'Excel тайлан татах',
+          onPressed: () => AdminReportDialog.show(
+            context,
+            school: _adminSchool,
+            department: _adminDepartment,
+            isDepartmentHead: _isTenhimiinErkhlegt,
+          ),
+        ),
         IconButton(
           icon: const Icon(
             Icons.bar_chart_rounded,
@@ -479,7 +494,9 @@ class _AdminEvaluationPageState extends State<AdminEvaluationPage> {
   }
 
   Widget _buildTeacherCard(Map<String, dynamic> t, int index) {
-    final name = '${t['last_name'] ?? ''} ${t['first_name'] ?? ''}'.trim();
+    final lastName = t['last_name'] as String? ?? '';
+    final firstName = t['first_name'] as String? ?? '';
+    final name = '${lastName.isNotEmpty ? "$lastName. " : ""}$firstName'.trim();
     final avg = t['avg'] as double;
     final count = t['count'] as int;
     final rank = t['rank'] as String? ?? '';
@@ -689,8 +706,9 @@ class _RequestBadgeState extends State<_RequestBadge> {
 
   @override
   Widget build(BuildContext context) {
-    if (_feedbackCount == 0 && _complaintCount == 0)
+    if (_feedbackCount == 0 && _complaintCount == 0) {
       return const SizedBox.shrink();
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
